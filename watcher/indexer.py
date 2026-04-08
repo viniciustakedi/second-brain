@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 indexer.py — Indexes your Obsidian vault into ChromaDB via HTTP.
-Runs once at startup inside Docker.
+Used by watcher and MCP; full vault runs via `make index` / compose indexer service.
 """
 
 import os

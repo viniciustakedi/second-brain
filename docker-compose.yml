@@ -49,8 +49,11 @@ services:
       retries: 10
       start_period: 20s
 
-  # ── Indexer: runs once on startup to index your vault ─────────
+  # ── Indexer: on-demand full vault index (not started by `compose up`) ──
+  # Run: make index   or   docker compose run --rm indexer
+  # Profile avoids re-indexing thousands of files on every restart when Chroma already has data.
   indexer:
+    profiles: ["index"]
     build:
       context: ./indexer
       dockerfile: Dockerfile

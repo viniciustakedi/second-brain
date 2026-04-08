@@ -18,7 +18,7 @@ No API keys. No cloud. Everything runs on your machine.
 │       │              │                  │           │
 │  ┌────┴─────┐   ┌────┴─────┐            │           │
 │  │ indexer  │   │ watcher  │            │           │
-│  │ (once)   │   │ (always) │            │           │
+│  │ (manual) │   │ (always) │            │           │
 │  └──────────┘   └──────────┘            │           │
 └─────────────────────────────────────────┼───────────┘
                                           │ SSE
@@ -72,7 +72,15 @@ make up
 ```
 
 First run pulls Docker images and the embedding model — takes ~5 min.
-After that, startup is instant. Your vault is indexed automatically on first run.
+After that, `make up` starts the stack without a full re-index (Chroma keeps your vectors across restarts).
+
+**First time** (empty Chroma) or after `docker-compose down -v`, build the index once:
+
+```bash
+make index
+```
+
+Day-to-day changes are picked up by the **watcher** while the stack is running.
 
 ### 4. Register the MCP server in Claude Desktop
 
@@ -140,7 +148,7 @@ On the new machine:
 3. Run `make up` from inside the `second-brain/` folder
 4. Register the MCP server in Claude Desktop (step 4 above)
 
-The Chroma index is rebuilt automatically on the new machine. No manual steps needed.
+Docker volumes (Chroma, Ollama) are **local** to that machine unless you copy them yourself. After `make up`, run `make index` once on the new machine so search has data (your `.md` files already sync via iCloud).
 
 ---
 
@@ -161,7 +169,7 @@ make ps       # check container status
 
 ```bash
 make up
-# Starts all containers. Safe to run anytime — won't touch existing data.
+# Starts ollama, chroma, watcher, mcp-server. Does not run a full vault re-index.
 
 make down
 # Stops containers. DATA IS PRESERVED (volumes are kept).
@@ -192,7 +200,8 @@ make build-watcher
 
 ```bash
 make index
-# Re-indexes your entire vault from scratch (watcher handles day-to-day updates).
+# Full vault pass into Chroma (use after first install, after down -v, or when you want a rebuild).
+# Watcher handles incremental updates while the stack is up.
 
 make search Q="your query"
 # Semantic search across your vault, returns top 5 results.
@@ -222,7 +231,7 @@ docker-compose down -v   # ← THIS deletes all data (Chroma + Ollama volumes)
 **Never run `down -v` unless you want to start from scratch.**
 `make down` is safe — it does NOT pass `-v`.
 
-If you accidentally delete the index, just run `make up` — it will rebuild automatically.
+If you accidentally delete the index, run `make up` and then `make index` to rebuild it.
 
 ---
 
