@@ -91,6 +91,41 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Fully quit and reopen Claude Desktop. You'll see a 🔧 tools icon — your second brain is live.
 
+### 5. Optional: reach your local MCP from the cloud (tunnel)
+
+Claude Desktop on the same Mac can use `http://localhost:3777/sse` directly. If you want **Cursor**, **Anthropic**, or another product to attach to **this same MCP** without deploying your own VPS, run a **secure tunnel** from your machine while the stack is up (`make up`). That forwards a public HTTPS URL to port **3777** on localhost.
+
+A common tool for this is **[ngrok](https://ngrok.com/)** (similar options include Cloudflare Tunnel `cloudflared`, LocalTunnel, etc.):
+
+1. Install and authenticate ngrok per their docs.
+2. Start the tunnel (MCP port from this project defaults to **3777**):
+
+   ```bash
+   ngrok http 3777
+   ```
+
+3. Copy the **HTTPS** forwarding URL ngrok prints (e.g. `https://abcd-12-34-56-78.ngrok-free.app`).
+4. Point your remote MCP client at the **SSE** path on that host:
+
+   ```text
+   https://<your-ngrok-host>/sse
+   ```
+
+   Example Cursor / cloud-style config (shape may vary by product):
+
+   ```json
+   {
+     "mcpServers": {
+       "second-brain": {
+         "type": "sse",
+         "url": "https://<your-ngrok-host>/sse"
+       }
+     }
+   }
+   ```
+
+**Security (read this):** a tunnel exposes whatever is bound to that port on your machine. Anyone who can hit the URL may be able to use your MCP tools (search/read/write notes, depending on what the server allows). Prefer **short-lived tunnels**, **ngrok access controls / IP restrictions** if available, and **never commit** tunnel URLs or tokens. For day-to-day private use, **localhost + Claude Desktop** is simpler and safer than opening a public URL.
+
 ---
 
 ## Moving to another machine
