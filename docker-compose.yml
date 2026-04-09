@@ -115,7 +115,6 @@ services:
       - EMBED_MODEL=nomic-embed-text
       - TOP_K_RESULTS=3
       - PORT=3777
-      - MCP_SECRET=${MCP_SECRET:-}
 
 volumes:
   ollama_data:
