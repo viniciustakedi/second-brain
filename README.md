@@ -99,40 +99,130 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Fully quit and reopen Claude Desktop. You'll see a 🔧 tools icon — your second brain is live.
 
-### 5. Optional: reach your local MCP from the cloud (tunnel)
+### 5. Optional: reach your local MCP from the cloud (Cloudflare Tunnel)
 
-Claude Desktop on the same Mac can use `http://localhost:3777/sse` directly. If you want **Cursor**, **Anthropic**, or another product to attach to **this same MCP** without deploying your own VPS, run a **secure tunnel** from your machine while the stack is up (`make up`). That forwards a public HTTPS URL to port **3777** on localhost.
+Claude Desktop on the same Mac can use `http://localhost:3777/sse` directly.
+If you want **Claude web**, **Cursor**, or any other cloud client to use the same MCP, expose it via a tunnel — and enable OAuth so only you can access your vault.
 
-A common tool for this is **[ngrok](https://ngrok.com/)** (similar options include Cloudflare Tunnel `cloudflared`, LocalTunnel, etc.):
+See **[Security & Authentication](#security--authentication)** below for the full setup.
 
-1. Install and authenticate ngrok per their docs.
-2. Start the tunnel (MCP port from this project defaults to **3777**):
+---
 
-   ```bash
-   ngrok http 3777
+## Security & Authentication
+
+### Local mode (default)
+
+When `OAUTH_PASSWORD` and `JWT_SECRET` are **not** set, the server runs with no authentication.
+This is safe for `http://localhost:3777` because only processes on your Mac can reach that port.
+
+### Remote mode — OAuth 2.0 via Cloudflare Tunnel
+
+When you expose the MCP over a public URL you must enable OAuth so only you can authorize access.
+The server implements **OAuth 2.0 Authorization Code + PKCE** (RFC 6749 / RFC 7636), which is what Claude web, Cursor, and other MCP-compatible clients expect.
+
+#### How the flow works
+
+```
+Claude web                         MCP server (your Mac)
+    │                                      │
+    │  GET /sse  →  401 + WWW-Authenticate │
+    │◄─────────────────────────────────────│
+    │                                      │
+    │  GET /.well-known/oauth-*  (discover)│
+    │─────────────────────────────────────►│
+    │◄── OAuth metadata (endpoints, etc.) ─│
+    │                                      │
+    │  POST /oauth/register  (client reg.) │
+    │─────────────────────────────────────►│
+    │◄── client_id ────────────────────────│
+    │                                      │
+    │  Opens browser → GET /oauth/authorize│
+    │─────────────────────────────────────►│
+    │◄── Login page (password form) ───────│
+    │                                      │
+    │  POST /oauth/authorize  (password)   │
+    │─────────────────────────────────────►│
+    │◄── 302 → redirect_uri?code=…  ───────│
+    │                                      │
+    │  POST /oauth/token  (code + PKCE)    │
+    │─────────────────────────────────────►│
+    │◄── { access_token: "…JWT…" }  ───────│
+    │                                      │
+    │  GET /sse  →  Authorization: Bearer  │
+    │─────────────────────────────────────►│
+    │◄── MCP stream ────────────────────────│
+```
+
+#### 1. Install and start Cloudflare Tunnel
+
+```bash
+# macOS
+brew install cloudflared
+
+# Start a tunnel to the MCP port (run while `make up` is running)
+cloudflared tunnel --url http://localhost:3777
+```
+
+Cloudflare prints a public HTTPS URL like `https://xxx.trycloudflare.com`.
+Copy it — you'll need it in the next step.
+
+> For a stable URL instead of a random one, create a named tunnel in the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com) and connect it to your domain.
+
+#### 2. Set environment variables
+
+Add these to your `.env` file (copy `.env.example` as a starting point):
+
+```bash
+# The password shown on the login page in the browser
+OAUTH_PASSWORD=your-strong-password-here
+
+# Secret for signing JWT tokens — keep private, never commit
+JWT_SECRET=$(openssl rand -hex 32)
+
+# Your Cloudflare Tunnel public URL (no trailing slash)
+PUBLIC_URL=https://xxx.trycloudflare.com
+
+# How long tokens stay valid before re-login is required (default: 7 days)
+JWT_EXPIRY_DAYS=7
+```
+
+Then rebuild and restart the MCP server:
+
+```bash
+make build-mcp
+```
+
+#### 3. Add to Claude web (claude.ai)
+
+1. Open **claude.ai** → Settings → **Integrations** (or MCP)
+2. Add a new MCP server with the URL:
    ```
-
-3. Copy the **HTTPS** forwarding URL ngrok prints (e.g. `https://abcd-12-34-56-78.ngrok-free.app`).
-4. Point your remote MCP client at the **SSE** path on that host:
-
-   ```text
-   https://<your-ngrok-host>/sse
+   https://xxx.trycloudflare.com/sse
    ```
+3. Claude will open a browser tab pointing to your login page
+4. Enter your `OAUTH_PASSWORD`
+5. Claude gets a token — your second brain is now available in every cloud conversation
 
-   Example Cursor / cloud-style config (shape may vary by product):
+The same URL works in **Cursor**, **OpenAI**, or any other client that supports remote MCP with OAuth.
 
-   ```json
-   {
-     "mcpServers": {
-       "second-brain": {
-         "type": "sse",
-         "url": "https://<your-ngrok-host>/sse"
-       }
-     }
-   }
-   ```
+#### Token lifecycle
 
-**Security (read this):** a tunnel exposes whatever is bound to that port on your machine. Anyone who can hit the URL may be able to use your MCP tools (search/read/write notes, depending on what the server allows). Prefer **short-lived tunnels**, **ngrok access controls / IP restrictions** if available, and **never commit** tunnel URLs or tokens. For day-to-day private use, **localhost + Claude Desktop** is simpler and safer than opening a public URL.
+| Event | Behaviour |
+|---|---|
+| First connection | Browser login, token issued for `JWT_EXPIRY_DAYS` days |
+| Token valid | All requests pass through with no user interaction |
+| Token expired | Client triggers a new login flow automatically |
+| Container restart | Pending auth codes are cleared; issued tokens remain valid |
+
+#### Security properties
+
+- **PKCE (S256)** — prevents authorization code interception even if someone captures the redirect
+- **JWT (HS256)** — tokens are signed with `JWT_SECRET`; tampered tokens are rejected
+- **Timing-safe comparisons** — password and PKCE checks use `secrets.compare_digest`
+- **Short-lived auth codes** — codes expire after 10 minutes and are single-use
+- **No client secrets** — public clients (Claude web) are accepted; security comes from PKCE + password
+
+> `.env` is in `.gitignore` — secrets are never committed. Rotate `JWT_SECRET` any time by updating `.env` and restarting (`make build-mcp`); all existing tokens are immediately invalidated.
 
 ---
 

@@ -8,7 +8,9 @@ RUN pip install --no-cache-dir \
     mcp \
     rich \
     starlette \
-    uvicorn
+    uvicorn \
+    PyJWT \
+    python-multipart
 
 COPY mcp-server/mcp_server.py .
 COPY indexer/indexer.py .

@@ -115,6 +115,10 @@ services:
       - EMBED_MODEL=nomic-embed-text
       - TOP_K_RESULTS=3
       - PORT=3777
+      - OAUTH_PASSWORD=${OAUTH_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - JWT_EXPIRY_DAYS=${JWT_EXPIRY_DAYS:-7}
+      - PUBLIC_URL=${PUBLIC_URL:-}
 
 volumes:
   ollama_data:
