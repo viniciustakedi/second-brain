@@ -15,6 +15,7 @@ Claude Code connects to this via stdio (local) or HTTP (remote).
 import os
 import re
 import json
+import secrets as secrets_std
 from pathlib import Path
 from datetime import datetime
 
@@ -37,6 +38,27 @@ CHROMA_HOST = os.getenv("CHROMA_HOST", "http://chroma:8000")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 TOP_K       = int(os.getenv("TOP_K_RESULTS", "3"))
+# If set, all HTTP routes require Authorization: Bearer <value> or X-MCP-Secret: <value>
+MCP_SECRET  = os.getenv("MCP_SECRET", "").strip()
+
+
+def _http_headers_from_scope(scope: dict) -> dict[str, str]:
+    return {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+
+
+def _request_authorized(headers: dict[str, str]) -> bool:
+    if not MCP_SECRET:
+        return True
+    auth = headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if secrets_std.compare_digest(token, MCP_SECRET):
+            return True
+    alt = headers.get("x-mcp-secret", "")
+    if alt and secrets_std.compare_digest(alt, MCP_SECRET):
+        return True
+    return False
+
 
 # ── Clients ───────────────────────────────────────────────────
 def get_chroma():
@@ -390,5 +412,21 @@ starlette_app = Starlette(
     ]
 )
 
+
+async def mcp_http_auth_app(scope, receive, send):
+    """ASGI wrapper — avoids BaseHTTPMiddleware (bad for SSE streaming)."""
+    if scope["type"] != "http":
+        await starlette_app(scope, receive, send)
+        return
+    if scope["method"] == "OPTIONS":
+        await starlette_app(scope, receive, send)
+        return
+    if not _request_authorized(_http_headers_from_scope(scope)):
+        await JSONResponse({"error": "Unauthorized"}, status_code=401)(scope, receive, send)
+        return
+    await starlette_app(scope, receive, send)
+
+
 if __name__ == "__main__":
-    uvicorn.run(starlette_app, host="0.0.0.0", port=PORT)
+    app = mcp_http_auth_app if MCP_SECRET else starlette_app
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

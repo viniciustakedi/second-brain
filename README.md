@@ -103,36 +103,72 @@ Fully quit and reopen Claude Desktop. You'll see a 🔧 tools icon — your seco
 
 Claude Desktop on the same Mac can use `http://localhost:3777/sse` directly. If you want **Cursor**, **Anthropic**, or another product to attach to **this same MCP** without deploying your own VPS, run a **secure tunnel** from your machine while the stack is up (`make up`). That forwards a public HTTPS URL to port **3777** on localhost.
 
-A common tool for this is **[ngrok](https://ngrok.com/)** (similar options include Cloudflare Tunnel `cloudflared`, LocalTunnel, etc.):
+**Typical options:** **[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)** (`cloudflared`, free, stable URL on your own subdomain) or **[ngrok](https://ngrok.com/)**. Both forward HTTPS on the internet to port **3777** on your Mac while `make up` is running.
+
+#### Ngrok (quick test)
 
 1. Install and authenticate ngrok per their docs.
-2. Start the tunnel (MCP port from this project defaults to **3777**):
+2. `ngrok http 3777`
+3. Use `https://<ngrok-host>/sse` in the remote MCP config.
 
-   ```bash
-   ngrok http 3777
-   ```
+#### Cloudflare Tunnel (subdomain on your zone)
 
-3. Copy the **HTTPS** forwarding URL ngrok prints (e.g. `https://abcd-12-34-56-78.ngrok-free.app`).
-4. Point your remote MCP client at the **SSE** path on that host:
+Good fit when DNS already lives on Cloudflare: no open inbound ports on your router, TLS at the edge, fixed hostname.
+
+1. Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) and run `cloudflared tunnel login`.
+2. In [Zero Trust](https://one.dash.cloudflare.com/) → **Networks** → **Tunnels**, create a tunnel and add a **public hostname**: e.g. `mcp` → `http://127.0.0.1:3777` (same port as `MCP_PORT` / default **3777**). Publish the route so Cloudflare creates the **CNAME** on your zone.
+3. Run the tunnel on the machine where Docker is listening (often `cloudflared tunnel run <name>`).
+4. Point OpenAI / Cursor / etc. at:
 
    ```text
-   https://<your-ngrok-host>/sse
+   https://mcp.yourdomain.com/sse
    ```
 
-   Example Cursor / cloud-style config (shape may vary by product):
+   Example remote MCP config (shape varies by product):
 
    ```json
    {
      "mcpServers": {
        "second-brain": {
          "type": "sse",
-         "url": "https://<your-ngrok-host>/sse"
+         "url": "https://mcp.yourdomain.com/sse"
        }
      }
    }
    ```
 
-**Security (read this):** a tunnel exposes whatever is bound to that port on your machine. Anyone who can hit the URL may be able to use your MCP tools (search/read/write notes, depending on what the server allows). Prefer **short-lived tunnels**, **ngrok access controls / IP restrictions** if available, and **never commit** tunnel URLs or tokens. For day-to-day private use, **localhost + Claude Desktop** is simpler and safer than opening a public URL.
+**Security (read this):** the tunnel URL is on the public internet. Without extra checks, **anyone who obtains the URL** could use your MCP (search/read/write notes). Stack defenses in order:
+
+1. **Prefer no public URL when you can** — `localhost` on the same machine, or **Tailscale** / VPN so only your devices reach the Mac.
+
+2. **Edge / Zero Trust (before traffic hits Docker)**  
+   - **Cloudflare:** [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) on that hostname — e.g. allow only your email, or a **[service token](https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/)** for machine-to-machine calls. Interactive login helps browsers; **cloud MCP connectors** must send whatever Access expects (often **service token** headers) or they will get **403**. If the vendor cannot send Cloudflare headers, protect the app with **`MCP_SECRET`** (below) instead of relying on Access for that hostname.  
+   - **Ngrok:** [traffic policies](https://ngrok.com/docs/traffic-policy/) (OAuth, IP allowlists, JWT, etc.) where your plan allows.
+
+3. **App secret (`MCP_SECRET`)** — Set in `.env` (see `.env.example`). This server then requires `Authorization: Bearer <same secret>` or `X-MCP-Secret: <same secret>` on `/sse`, `/messages/…`, and `/search`. **Use this for OpenAI/cloud MCP if the product lets you attach headers** — it does not depend on Cloudflare’s UI. If the client supports **no** custom headers, you are limited to edge policies that still allow that client (hard) or accepting more risk; check the vendor’s MCP docs.
+
+   ```bash
+   # .env — generate once: openssl rand -hex 32
+   MCP_SECRET=your-long-random-string
+   ```
+
+   Example config when headers are supported:
+
+   ```json
+   {
+     "mcpServers": {
+       "second-brain": {
+         "type": "sse",
+         "url": "https://mcp.yourdomain.com/sse",
+         "headers": {
+           "Authorization": "Bearer your-long-random-string"
+         }
+       }
+     }
+   }
+   ```
+
+**Never commit** tunnel URLs, tokens, or `.env`. For day-to-day private use, **localhost** (or Tailscale) is simpler and safer than a public HTTPS endpoint.
 
 ---
 
