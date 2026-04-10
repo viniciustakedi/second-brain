@@ -25,7 +25,7 @@ console = Console()
 VAULT_PATH  = os.getenv("VAULT_PATH", "/vault")
 CHROMA_HOST = os.getenv("CHROMA_HOST", "http://chroma:8000")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text-v2-moe")
 
 
 def wait_for_services(retries: int = 20, delay: float = 3.0):

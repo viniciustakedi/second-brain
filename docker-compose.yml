@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Ollama model puller: runs once, pulls nomic-embed-text ─────
+  # ── Ollama model puller: runs once, pulls nomic-embed-text-v2-moe ─────
   ollama-setup:
     image: ollama/ollama:latest
     container_name: second-brain-ollama-setup
@@ -26,7 +26,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     entrypoint: >
-      /bin/sh -c "ollama pull nomic-embed-text && echo 'Model ready'"
+      /bin/sh -c "ollama pull nomic-embed-text-v2-moe && echo 'Model ready'"
     restart: "no"
 
   # ── ChromaDB: local vector database ───────────────────────────
@@ -69,7 +69,7 @@ services:
       - VAULT_PATH=/vault
       - CHROMA_HOST=http://chroma:8000
       - OLLAMA_HOST=http://ollama:11434
-      - EMBED_MODEL=nomic-embed-text
+      - EMBED_MODEL=nomic-embed-text-v2-moe
     restart: "no"
 
   # ── Watcher: monitors vault and auto re-indexes on changes ─────
@@ -90,7 +90,7 @@ services:
       - VAULT_PATH=/vault
       - CHROMA_HOST=http://chroma:8000
       - OLLAMA_HOST=http://ollama:11434
-      - EMBED_MODEL=nomic-embed-text
+      - EMBED_MODEL=nomic-embed-text-v2-moe
 
   # ── MCP Server: exposes vault tools to Claude Code ─────────────
   mcp-server:
@@ -112,7 +112,7 @@ services:
       - VAULT_PATH=/vault
       - CHROMA_HOST=http://chroma:8000
       - OLLAMA_HOST=http://ollama:11434
-      - EMBED_MODEL=nomic-embed-text
+      - EMBED_MODEL=nomic-embed-text-v2-moe
       - TOP_K_RESULTS=3
       - PORT=3777
       - OAUTH_PASSWORD=${OAUTH_PASSWORD:-}

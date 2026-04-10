@@ -43,7 +43,7 @@ import uvicorn
 VAULT_PATH  = os.getenv("VAULT_PATH", "/vault")
 CHROMA_HOST = os.getenv("CHROMA_HOST", "http://chroma:8000")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text-v2-moe")
 TOP_K       = int(os.getenv("TOP_K_RESULTS", "3"))
 PORT        = int(os.getenv("PORT", "3777"))
 
