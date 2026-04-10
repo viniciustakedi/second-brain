@@ -1,42 +1,62 @@
-SHELL := /bin/bash
+# Second Brain — Docker helpers (macOS, Linux, or Git Bash on Windows).
+# Windows CMD without Make: use `win\brain.cmd` or `.\win\brain.ps1`.
+# Compose reads `.env` from this directory automatically.
 
-VAULT_PATH ?= $(shell source ~/.zshrc 2>/dev/null && echo $$VAULT_PATH)
+-include .env
+export
 
-export VAULT_PATH
+guard-env:
+	@test -f .env || (echo "ERROR: Copy .env.example to .env in the project root and set VAULT_PATH." && exit 1)
+	@grep -qE '^[[:space:]]*VAULT_PATH=' .env || (echo "ERROR: VAULT_PATH missing in .env" && exit 1)
 
-guard-vault:
-	@test -n "$(VAULT_PATH)" || (echo "ERROR: VAULT_PATH is not set. Add it to ~/.zshrc: export VAULT_PATH=/path/to/vault" && exit 1)
-	@echo "VAULT_PATH=$(VAULT_PATH)"
+up: guard-env
+	docker compose up -d
 
-up: guard-vault
-	docker-compose up -d
+up-backup: guard-env
+	docker compose --profile backup up -d
 
 down:
-	docker-compose down
+	docker compose down
 
-restart: guard-vault
-	docker-compose restart
+down-backup:
+	docker compose --profile backup down
 
-build: guard-vault
-	docker-compose build --no-cache mcp-server watcher
-	docker-compose up -d --force-recreate mcp-server watcher
+restart: guard-env
+	docker compose restart
 
-build-mcp: guard-vault
-	docker-compose build --no-cache mcp-server
-	docker-compose up -d --force-recreate mcp-server
+build: guard-env
+	docker compose build --no-cache mcp-server watcher
+	docker compose up -d --force-recreate mcp-server watcher
 
-build-watcher: guard-vault
-	docker-compose build --no-cache watcher
-	docker-compose up -d --force-recreate watcher
+build-mcp: guard-env
+	docker compose build --no-cache mcp-server
+	docker compose up -d --force-recreate mcp-server
+
+build-watcher: guard-env
+	docker compose build --no-cache watcher
+	docker compose up -d --force-recreate watcher
+
+build-backup: guard-env
+	docker compose build --no-cache backup
+	docker compose up -d --force-recreate backup
 
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 ps:
-	docker-compose ps
+	docker compose ps
 
-index:
-	docker-compose run --rm indexer python3 indexer.py --full
+index: guard-env
+	docker compose --profile index run --rm indexer python3 indexer.py --full
+
+backup-once: guard-env
+	docker compose --profile backup run --rm backup python -m app snapshot-once
+
+backup-retry: guard-env
+	docker compose --profile backup run --rm backup python -m app retry
+
+backup-retention: guard-env
+	docker compose --profile backup run --rm backup python -m app retention
 
 check-chroma-databases:
 	curl "http://localhost:8000/api/v2/tenants/default_tenant/databases/default_database/collections"

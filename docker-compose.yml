@@ -120,6 +120,36 @@ services:
       - JWT_EXPIRY_DAYS=${JWT_EXPIRY_DAYS:-7}
       - PUBLIC_URL=${PUBLIC_URL:-}
 
+  # ── Backup: watcher journal (SQLite) + daily zip snapshot + copy to “iCloud drop” folder ──
+  # Enable: docker compose --profile backup up -d
+  # Override BRAIN_* in .env for real paths; defaults use ./.brain-local/ under the repo (see .env.example).
+  backup:
+    profiles: ["backup"]
+    build:
+      context: ./backup-service
+      dockerfile: Dockerfile
+    container_name: second-brain-backup
+    restart: unless-stopped
+    volumes:
+      - ${VAULT_PATH}:/vault:ro
+      # Defaults keep `docker compose` valid without BRAIN_*; override with absolute paths (e.g. iCloud folder).
+      - ${BRAIN_SNAPSHOT_LOCAL_DIR:-./.brain-local/snapshots}:/snapshots/local
+      - ${BRAIN_ICLOUD_BACKUP_DIR:-./.brain-local/icloud-drop}:/snapshots/icloud
+      - ${BRAIN_STATE_DIR:-./.brain-local/state}:/state
+    environment:
+      - VAULT_PATH=/vault
+      - SNAPSHOT_LOCAL_DIR=/snapshots/local
+      - ICLOUD_BACKUP_DIR=/snapshots/icloud
+      - STATE_DB_PATH=/state/backup_state.sqlite
+      - BACKUP_SNAPSHOT_TIME=${BACKUP_SNAPSHOT_TIME:-23:59}
+      - BACKUP_RETENTION_LOCAL_DAYS=${BACKUP_RETENTION_LOCAL_DAYS:-14}
+      - BACKUP_RETENTION_ICLOUD_DAYS=${BACKUP_RETENTION_ICLOUD_DAYS:-30}
+      - BACKUP_RETRY_COPY_INTERVAL_SEC=${BACKUP_RETRY_COPY_INTERVAL_SEC:-900}
+      - BACKUP_EXCLUDE_GLOBS=${BACKUP_EXCLUDE_GLOBS:-}
+      - BACKUP_LOG_LEVEL=${BACKUP_LOG_LEVEL:-INFO}
+      - BACKUP_RUN_ON_START=${BACKUP_RUN_ON_START:-false}
+      - TZ=${TZ:-UTC}
+
 volumes:
   ollama_data:
   chroma_data:

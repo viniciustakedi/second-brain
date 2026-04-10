@@ -1,0 +1,8 @@
+# Second Brain on Windows — use this file with GNU Make from Git for Windows:
+#   "C:\Program Files\Git\bin\bash.exe" -lc "make -f Makefile.windows up"
+#
+# If you do not use Make at all, use CMD or PowerShell instead:
+#   win\brain.cmd up
+#   .\win\brain.ps1 up
+#
+include Makefile

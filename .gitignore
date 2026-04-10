@@ -44,3 +44,6 @@ Thumbs.db
 
 .claude/
 .cursor/
+
+# Default local backup layout (compose fallbacks); override BRAIN_* in .env for real iCloud paths.
+.brain-local/
