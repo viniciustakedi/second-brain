@@ -65,20 +65,48 @@ def extract_tags(content: str) -> list[str]:
     return re.findall(r'#([a-zA-Z][a-zA-Z0-9_/-]*)', content)
 
 
-def chunk_text(text: str, max_chars: int = 1500) -> list[str]:
-    if len(text) <= max_chars:
-        return [text]
-    chunks, current = [], ""
+def chunk_text(text: str, max_chars: int = 600, hard_limit: int = 400) -> list[str]:
+    # Level 1: split by paragraphs, accumulate up to max_chars
+    para_chunks: list[str] = []
+    current = ""
     for para in text.split("\n\n"):
-        if len(current) + len(para) <= max_chars:
+        if len(current) + len(para) + 2 <= max_chars:
             current += para + "\n\n"
         else:
             if current:
-                chunks.append(current.strip())
+                para_chunks.append(current.strip())
             current = para + "\n\n"
     if current.strip():
-        chunks.append(current.strip())
-    return chunks or [text[:max_chars]]
+        para_chunks.append(current.strip())
+    if not para_chunks:
+        para_chunks = [text]
+
+    # Level 2: chunks still over hard_limit get split at sentence boundaries
+    final_chunks: list[str] = []
+    for chunk in para_chunks:
+        if len(chunk) <= hard_limit:
+            final_chunks.append(chunk)
+            continue
+        parts = re.split(r'(?<=[.!?]) |\n', chunk)
+        current = ""
+        for part in parts:
+            if not part:
+                continue
+            candidate = (current + " " + part).lstrip() if current else part
+            if len(candidate) <= hard_limit:
+                current = candidate
+            else:
+                if current:
+                    final_chunks.append(current.strip())
+                # Level 3: hard split if a single part exceeds hard_limit
+                while len(part) > hard_limit:
+                    final_chunks.append(part[:hard_limit])
+                    part = part[hard_limit:]
+                current = part
+        if current.strip():
+            final_chunks.append(current.strip())
+
+    return final_chunks or [text[:hard_limit]]
 
 
 def index_file(filepath: Path, collection, force: bool = False) -> bool:
