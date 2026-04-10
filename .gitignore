@@ -1,11 +1,17 @@
 # -----------------------------------------------------------------------------
-# Obsidian vault (private notes + .obsidian metadata)
+# Private data — never commit (Obsidian vault + batch backup artifacts)
 # -----------------------------------------------------------------------------
-# Convention for this repo: keep your vault next to the code as:
-#   second-brain-obsidian/
-# (friendly name: "Second Brain Obsidian"). If you use a different folder
-# name or location, add it here so Markdown and .obsidian never get pushed.
-memories/
+# If your vault or iCloud backup folder lives inside this repo (common with
+# iCloud Drive), keep these entries so GitHub only gets the Docker/MCP code.
+#
+# Obsidian: File → Open Vault… → choose the `memories` folder (your .md + .obsidian).
+/memories/
+
+# Zip snapshots + .sha256 sidecars dropped next to the code (e.g. …/second-brain/backup)
+/backup/
+
+# Legacy vault folder name (ignore if you still have it next to the repo)
+/second-brain-obsidian/
 
 # -----------------------------------------------------------------------------
 # Secrets — never commit real credentials
@@ -45,5 +51,5 @@ Thumbs.db
 .claude/
 .cursor/
 
-# Default local backup layout (compose fallbacks); override BRAIN_* in .env for real iCloud paths.
+# Default local backup layout (Compose fallbacks); override BRAIN_* in .env for real paths.
 .brain-local/

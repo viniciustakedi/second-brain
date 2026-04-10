@@ -1,6 +1,6 @@
 # 🧠 Second Brain — Docker Edition
 
-Local, private knowledge base with MCP tools for Claude Desktop. Optional **batch** zip backups into your iCloud Drive folder (one file per snapshot — not per-note sync).
+Local, private knowledge base with MCP tools for Claude. Optional **batch** zip backups into your iCloud Drive folder (one file per snapshot — not per-note sync).
 No API keys. No cloud. Everything runs on your machine.
 
 ---
@@ -8,22 +8,24 @@ No API keys. No cloud. Everything runs on your machine.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Docker Network                   │
-│                                                     │
-│  ┌──────────┐   ┌──────────┐   ┌─────────────────┐  │
-│  │  ollama  │   │  chroma  │   │   mcp-server    │  │
-│  │  :11434  │   │  :8000   │   │     :3777       │  │
-│  └────┬─────┘   └────┬─────┘   └────────┬────────┘  │
-│       │              │                  │           │
-│  ┌────┴─────┐   ┌────┴─────┐            │           │
-│  │ indexer  │   │ watcher  │   │ backup (opt.) │   │
-│  │ (manual) │   │ (always) │   │ zip → iCloud  │   │
-│  └──────────┘   └──────────┘   └───────────────┘   │
-└─────────────────────────────────────────┼───────────┘
-                                          │ SSE
-                                   Claude Desktop
-                                   (your machine)
+┌──────────────────────────────────────────────────────────────┐
+│                        Docker Network                        │
+│                                                              │
+│  ┌──────────┐   ┌──────────┐   ┌──────────────────────────┐  │
+│  │  ollama  │   │  chroma  │   │       mcp-server         │  │
+│  │  :11434  │   │  :8000   │   │         :3777            │  │
+│  └────┬─────┘   └────┬─────┘   └────────────┬─────────────┘  │
+│       │              │                      │                │
+│  ┌────┴─────┐   ┌────┴─────┐   ┌────────────┴─────────────┐  │
+│  │ indexer  │   │ watcher  │   │     backup-service       │  │
+│  │ (manual) │   │ (always) │   │  SQLite + zip → iCloud   │  │
+│  └──────────┘   └──────────┘   └──────────────────────────┘  │
+└────────────────────────────────────────────┬─────────────────┘
+                                             │ SSE
+                              ┌──────────────┴───────────────┐
+                              │  Claude Desktop / Claude Code │
+                              │  Claude web (via tunnel)      │
+                              └──────────────────────────────┘
 ```
 
 ---
@@ -31,7 +33,7 @@ No API keys. No cloud. Everything runs on your machine.
 ## Prerequisites
 
 - Docker Desktop ([Mac](https://www.docker.com/products/docker-desktop) or [Windows](https://www.docker.com/products/docker-desktop))
-- Claude Desktop → [https://claude.ai/download](https://claude.ai/download)
+- Claude Desktop → [https://claude.ai/download](https://claude.ai/download) **or** Claude Code CLI
 
 ---
 
@@ -39,31 +41,52 @@ No API keys. No cloud. Everything runs on your machine.
 
 ### 1. Get the project
 
-If you already have it via iCloud, it's already on your machine. Otherwise:
-
-```bash
-# Copy or clone the second-brain/ folder anywhere you like, e.g.:
-cd ~/Developer
-# paste the second-brain/ folder here
-```
+If you already have it via iCloud, it's already on your machine. Otherwise copy or clone the `second-brain/` folder anywhere you like.
 
 ### 2. Configure `.env`
 
-Copy the template and edit paths (Docker Compose reads `.env` from the `second-brain/` folder on **Mac, Windows, and Linux**):
+Copy the template and fill in your paths (Docker Compose reads `.env` from the `second-brain/` folder on Mac, Windows, and Linux):
 
 ```bash
 cp .env.example .env
 ```
 
-Set **`VAULT_PATH`** to your Obsidian vault (folder that contains your `.md` notes and usually `.obsidian/`). Examples:
+**`VAULT_PATH`** (required) — the folder containing your `.md` notes:
 
-- **macOS (local disk, recommended):** `VAULT_PATH=/Users/you/Brain/second-brain-obsidian`
-- **macOS (vault still inside iCloud Drive):** same idea, but the path lives under `Library/Mobile Documents/...` if you want Apple to sync raw notes.
-- **Windows:** `VAULT_PATH=C:/Users/you/Brain/second-brain-obsidian` (forward slashes work well in `.env`)
+| Platform | Example |
+|---|---|
+| macOS (local Documents) | `VAULT_PATH=/Users/you/Documents/second-brain/memories` |
+| macOS (iCloud Drive vault) | `VAULT_PATH=/Users/you/Library/Mobile Documents/com~apple~CloudDocs/second-brain/memories` |
+| Windows | `VAULT_PATH=C:/Users/you/Documents/second-brain/memories` |
 
-Optional **batch backup** (zip snapshots into a folder — often your iCloud Drive directory on this machine): either rely on Compose defaults (`.brain-local/` under the repo, gitignored) or set `BRAIN_SNAPSHOT_LOCAL_DIR`, `BRAIN_ICLOUD_BACKUP_DIR`, and `BRAIN_STATE_DIR` in `.env`. Start with `make up-backup` or `.\win\brain.ps1 up-backup`. See [Batch backup (optional)](#batch-backup-optional).
+**Recommended Mac layout** (vault local, backups to iCloud):
 
-**Git / remote repos:** The Obsidian vault is personal; it should not be pushed. A conventional folder name is `second-brain-obsidian` (listed in `.gitignore`). Secrets belong in `.env` (ignored); **commit `.env.example`, never `.env`.**
+```
+~/Documents/second-brain/
+├── memories/          ← VAULT_PATH (.md notes, .obsidian/)
+├── snapshots/         ← BRAIN_SNAPSHOT_LOCAL_DIR (local zip archives)
+└── snapshots/state/   ← BRAIN_STATE_DIR (SQLite journal)
+
+~/Library/Mobile Documents/com~apple~CloudDocs/second-brain/backup/
+                       ← BRAIN_ICLOUD_BACKUP_DIR (iCloud drop folder)
+```
+
+**Batch backup** variables (only needed for `make up-backup`):
+
+```bash
+BRAIN_SNAPSHOT_LOCAL_DIR=/Users/you/Documents/second-brain/snapshots
+BRAIN_ICLOUD_BACKUP_DIR=/Users/you/Library/Mobile Documents/com~apple~CloudDocs/second-brain/backup
+BRAIN_STATE_DIR=/Users/you/Documents/second-brain/snapshots/state
+
+BACKUP_SNAPSHOT_TIME=23:59          # wall-clock time for daily snapshot (uses TZ below)
+BACKUP_RETENTION_LOCAL_DAYS=14
+BACKUP_RETENTION_ICLOUD_DAYS=30
+TZ=America/Sao_Paulo                # IANA timezone for the scheduler
+```
+
+If these are not set, the Compose defaults to `.brain-local/` under the repo (gitignored) so the stack starts without them.
+
+> `.env` is gitignored — secrets are never committed. Commit `.env.example`, never `.env`.
 
 ### 3. Start everything
 
@@ -89,11 +112,11 @@ From the project folder:
 - **PowerShell:** `.\win\brain.ps1 up` — see `.\win\brain.ps1 help`
 - **CMD:** `win\brain.cmd up`
 
-If you use **Git for Windows**, you can run the same `make` targets as on macOS (`Makefile.windows` simply includes `Makefile`).
+If you use **Git for Windows / Git Bash**, you can run the same `make` targets as on macOS.
 
-### 5. Register the MCP server in Claude Desktop
+### 5. Register the MCP server
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -108,10 +131,25 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Fully quit and reopen Claude Desktop. You'll see a 🔧 tools icon — your second brain is live.
 
-### 6. Optional: reach your local MCP from the cloud (Cloudflare Tunnel)
+**Claude Code** — add to `~/.mcp.json` (global, works across all projects):
 
-Claude Desktop on the same Mac can use `http://localhost:3777/sse` directly.
-If you want **Claude web**, **Cursor**, or any other cloud client to use the same MCP, expose it via a tunnel — and enable OAuth so only you can access your vault.
+```json
+{
+  "mcpServers": {
+    "second-brain": {
+      "type": "sse",
+      "url": "http://localhost:3777/sse"
+    }
+  }
+}
+```
+
+Restart Claude Code after saving.
+
+### 6. Optional: reach your local MCP from the cloud (tunnel + OAuth)
+
+Claude Desktop and Claude Code on the same machine can use `http://localhost:3777/sse` directly.
+If you want **Claude web**, **Cursor**, or any other cloud client to use the same MCP, expose it via a tunnel and enable OAuth so only you can access your vault.
 
 See **[Security & Authentication](#security--authentication)** below for the full setup.
 
@@ -122,7 +160,7 @@ See **[Security & Authentication](#security--authentication)** below for the ful
 ### Local mode (default)
 
 When `OAUTH_PASSWORD` and `JWT_SECRET` are **not** set, the server runs with no authentication.
-This is safe for `http://localhost:3777` because only processes on your Mac can reach that port.
+This is safe for `http://localhost:3777` because only processes on your machine can reach that port.
 
 ### Remote mode — OAuth 2.0 via Cloudflare Tunnel
 
@@ -136,27 +174,21 @@ Claude web                         MCP server (your Mac)
     │                                      │
     │  GET /sse  →  401 + WWW-Authenticate │
     │◄─────────────────────────────────────│
-    │                                      │
     │  GET /.well-known/oauth-*  (discover)│
     │─────────────────────────────────────►│
-    │◄── OAuth metadata (endpoints, etc.) ─│
-    │                                      │
-    │  POST /oauth/register  (client reg.) │
+    │◄── OAuth metadata ───────────────────│
+    │  POST /oauth/register                │
     │─────────────────────────────────────►│
     │◄── client_id ────────────────────────│
-    │                                      │
     │  Opens browser → GET /oauth/authorize│
     │─────────────────────────────────────►│
     │◄── Login page (password form) ───────│
-    │                                      │
     │  POST /oauth/authorize  (password)   │
     │─────────────────────────────────────►│
-    │◄── 302 → redirect_uri?code=…  ───────│
-    │                                      │
+    │◄── 302 → redirect_uri?code=… ────────│
     │  POST /oauth/token  (code + PKCE)    │
     │─────────────────────────────────────►│
-    │◄── { access_token: "…JWT…" }  ───────│
-    │                                      │
+    │◄── { access_token: "…JWT…" } ────────│
     │  GET /sse  →  Authorization: Bearer  │
     │─────────────────────────────────────►│
     │◄── MCP stream ────────────────────────│
@@ -172,30 +204,20 @@ brew install cloudflared
 cloudflared tunnel --url http://localhost:3777
 ```
 
-Cloudflare prints a public HTTPS URL like `https://xxx.trycloudflare.com`.
-Copy it — you'll need it in the next step.
+Cloudflare prints a public HTTPS URL like `https://xxx.trycloudflare.com`. Copy it.
 
-> For a stable URL instead of a random one, create a named tunnel in the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com) and connect it to your domain.
+> For a stable URL, create a named tunnel in the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com) and connect it to your domain.
 
 #### 2. Set environment variables
 
-Add these to your `.env` file (copy `.env.example` as a starting point):
-
 ```bash
-# The password shown on the login page in the browser
 OAUTH_PASSWORD=your-strong-password-here
-
-# Secret for signing JWT tokens — keep private, never commit
 JWT_SECRET=$(openssl rand -hex 32)
-
-# Your Cloudflare Tunnel public URL (no trailing slash)
 PUBLIC_URL=https://xxx.trycloudflare.com
-
-# How long tokens stay valid before re-login is required (default: 7 days)
 JWT_EXPIRY_DAYS=7
 ```
 
-Then rebuild and restart the MCP server:
+Then rebuild the MCP server:
 
 ```bash
 make build-mcp
@@ -203,16 +225,12 @@ make build-mcp
 
 #### 3. Add to Claude web (claude.ai)
 
-1. Open **claude.ai** → Settings → **Integrations** (or MCP)
-2. Add a new MCP server with the URL:
-   ```
-   https://xxx.trycloudflare.com/sse
-   ```
-3. Claude will open a browser tab pointing to your login page
-4. Enter your `OAUTH_PASSWORD`
-5. Claude gets a token — your second brain is now available in every cloud conversation
+1. Open **claude.ai** → Settings → **Integrations**
+2. Add MCP server URL: `https://xxx.trycloudflare.com/sse`
+3. Claude opens a browser tab → enter your `OAUTH_PASSWORD`
+4. Claude gets a token — your second brain is live in every cloud conversation
 
-The same URL works in **Cursor**, **OpenAI**, or any other client that supports remote MCP with OAuth.
+The same URL works in **Cursor**, **OpenAI**, or any client that supports remote MCP with OAuth.
 
 #### Token lifecycle
 
@@ -221,69 +239,83 @@ The same URL works in **Cursor**, **OpenAI**, or any other client that supports 
 | First connection | Browser login, token issued for `JWT_EXPIRY_DAYS` days |
 | Token valid | All requests pass through with no user interaction |
 | Token expired | Client triggers a new login flow automatically |
-| Container restart | Pending auth codes are cleared; issued tokens remain valid |
+| Container restart | Pending auth codes cleared; issued tokens remain valid |
 
 #### Security properties
 
-- **PKCE (S256)** — prevents authorization code interception even if someone captures the redirect
-- **JWT (HS256)** — tokens are signed with `JWT_SECRET`; tampered tokens are rejected
+- **PKCE (S256)** — prevents authorization code interception
+- **JWT (HS256)** — tokens signed with `JWT_SECRET`; tampered tokens rejected
 - **Timing-safe comparisons** — password and PKCE checks use `secrets.compare_digest`
 - **Short-lived auth codes** — codes expire after 10 minutes and are single-use
-- **No client secrets** — public clients (Claude web) are accepted; security comes from PKCE + password
 
-> `.env` is in `.gitignore` — secrets are never committed. Rotate `JWT_SECRET` any time by updating `.env` and restarting (`make build-mcp`); all existing tokens are immediately invalidated.
+> Rotate `JWT_SECRET` any time by updating `.env` and running `make build-mcp` — all existing tokens are immediately invalidated.
 
 ---
 
 ## Batch backup (optional)
 
-The **`backup`** service (Compose profile `backup`) keeps the **vault as the source of truth** on local disk and, on a schedule, builds a **single compressed zip** (`brain-full-YYYY-MM-DD-HH-MM.zip`) with a `manifest.json`, SHA256 sidecar, and SQLite state for retries and retention.
+The **`backup-service`** (Compose profile `backup`) keeps the vault as the source of truth and, on a daily schedule, produces a compressed zip snapshot that is copied to your iCloud drop folder.
 
-| What is backed up | What is *not* in the zip |
-|-------------------|---------------------------|
-| All files under `VAULT_PATH` (notes, `.obsidian/`, etc., minus optional `BACKUP_EXCLUDE_GLOBS`) | Chroma index, Ollama models (regenerate with `make index` after restore) |
+### What's inside a snapshot
 
-**Flow:** staging copy → zip locally → checksum → copy zip + `.sha256` into `BRAIN_ICLOUD_BACKUP_DIR` → retention (never deletes the newest completed snapshot; skips rows still in error states you care about — failed copies stay until retry succeeds).
+| Included | Not included (regenerable) |
+|---|---|
+| All vault files (`.md`, `.obsidian/`, etc.) | Chroma index — rebuild with `make index` |
+| Optional exclusions via `BACKUP_EXCLUDE_GLOBS` | Ollama models — re-pulled automatically |
 
-**Start with backup:**
+### How it works
+
+1. **FS watcher** records `created / modified / deleted / moved` events in SQLite (`fs_events` table) — used for audit and future incremental backups.
+2. **Daily scheduler** at `BACKUP_SNAPSHOT_TIME` (wall-clock, respects `TZ`):
+   - Copies vault to a staging area
+   - Zips into `brain-full-YYYY-MM-DD-HH-MM.zip` + `manifest.json` + `.zip.sha256` sidecar
+   - Atomically copies zip to `BRAIN_ICLOUD_BACKUP_DIR` (`.part` + rename)
+   - Records result in SQLite (`snapshots` table) with status, checksum, path, attempts
+3. **Retry job** (every `BACKUP_RETRY_COPY_INTERVAL_SEC`) retries failed iCloud copies.
+4. **Retention** removes old archives locally and from iCloud, never deleting the newest completed snapshot.
+
+### Start with backup
 
 ```bash
 make up-backup
 # Windows: .\win\brain.ps1 up-backup
 ```
 
-**One-off snapshot (same env as compose):**
+### One-off snapshot
 
 ```bash
 make backup-once
 ```
 
-**Restore from a zip:** extract the archive on the new machine, point `VAULT_PATH` at the extracted `vault/` tree (or merge into your vault), run `make up` and `make index` to rebuild embeddings.
+### Restore from a zip
 
-**Limitations (v1):** full snapshots only; files can change while a snapshot runs (consistent enough for notes; heavy edits during the window may appear in the next run). Set `TZ` and `BACKUP_SNAPSHOT_TIME` for local wall-clock scheduling inside the container.
+1. Copy `brain-full-….zip` from iCloud to the target machine
+2. Verify checksum: `sha256sum -c brain-full-….zip.sha256`
+3. Extract — the archive contains the full vault tree
+4. Point `VAULT_PATH` at the extracted folder
+5. Run `make up` then `make index` to rebuild embeddings
+
+**Limitation (v1):** full snapshots only. Files changed while a snapshot runs appear in the next run.
 
 ---
 
 ## Moving to another machine
 
-Put the **vault** where you want it (local folder, or synced folder — your choice). Copy `.env` or recreate it with the same logical settings.
-
-On the new machine:
-
 1. Install Docker Desktop
-2. Ensure `.env` exists with `VAULT_PATH` pointing at the vault on that machine
-3. Run `make up` (or `.\win\brain.ps1 up`) from the `second-brain/` folder
-4. Register the MCP server in Claude Desktop (same JSON config as in first-time setup)
+2. Copy `.env` or recreate it with `VAULT_PATH` pointing at the vault on the new machine
+3. Run `make up` (or `.\win\brain.ps1 up`)
+4. Register the MCP server (same JSON config as in first-time setup)
+5. Run `make index` once to build the vector index — or restore from a backup zip first
 
-Docker volumes (Chroma, Ollama) are **local** to that machine. After `make up`, run `make index` once so search works — or restore a **batch zip** into `VAULT_PATH` first, then `make index`.
+Docker volumes (Chroma, Ollama) are local to each machine and rebuilt from scratch.
 
 ---
 
 ## Daily usage
 
 ```bash
-make up          # core stack
-make up-backup   # core + backup service (override BRAIN_* in .env for custom / iCloud paths)
+make up          # start core stack
+make up-backup   # start core + backup service
 make down        # stop (data preserved)
 make logs        # follow logs
 make ps          # container status
@@ -296,72 +328,46 @@ make ps          # container status
 ### Container lifecycle
 
 ```bash
-make up
-# Starts ollama, chroma, watcher, mcp-server. Does not run a full vault re-index.
-
-make down
-# Stops containers. DATA IS PRESERVED (volumes are kept).
-
-make restart
-# Restarts running containers without rebuilding.
+make up           # ollama, chroma, watcher, mcp-server
+make down         # stop containers — DATA IS PRESERVED (volumes kept)
+make restart      # restart running containers without rebuilding
+make up-backup    # core stack + backup service
+make down-backup  # stop backup service only
 ```
 
-### Rebuilding after code changes
+### Rebuild after code changes
 
-Use these when you change code in mcp-server/ or watcher/ — they do NOT touch the database.
+These do NOT touch Chroma or Ollama volumes.
 
 ```bash
-make build
-# Rebuilds and restarts mcp-server + watcher only.
-
-make build-mcp
-# Rebuilds and restarts mcp-server only.
-
-make build-watcher
-# Rebuilds and restarts watcher only.
-
-make build-backup
-# Rebuilds and restarts the backup service (requires backup .env paths).
+make build         # rebuild mcp-server + watcher
+make build-mcp     # rebuild mcp-server only
+make build-watcher # rebuild watcher only
+make build-backup  # rebuild backup service only
 ```
 
-> **Note:** Chroma (the vector database) and Ollama are never touched by build commands.
-> Your index is never deleted unless you explicitly run `docker compose down -v`.
-
-### Vault & Indexing
+### Vault & indexing
 
 ```bash
-make index
-# Full vault pass into Chroma (use after first install, after down -v, or when you want a rebuild).
-# Watcher handles incremental updates while the stack is up.
-
-make search Q="your query"
-# Semantic search across your vault, returns top 5 results.
-# Example: make search Q="docker networking"
-# Example: make search Q="black holes" TOP=3
+make index              # full vault re-index into Chroma
+make search Q="query"   # semantic search, returns top 5 results
+                        # e.g.: make search Q="docker networking"
+                        # e.g.: make search Q="black holes" TOP=3
 ```
 
 ### Chroma inspection
 
 ```bash
-make check-chroma-databases
-# Lists all collections in ChromaDB.
-
-make check-chunks-by-collection
-# Returns the total number of chunks in your second_brain collection.
-# Example: make check-chunks-by-collection COLLECTION_ID=your-collection-id
+make check-chroma-databases       # list all collections in ChromaDB
+make check-chunks-by-collection   # total chunks in second_brain collection
 ```
 
-### Batch backup
+### Backup
 
 ```bash
-make backup-once
-# One full zip + optional iCloud copy, then exit (Compose profile backup).
-
-make backup-retry
-# Retry failed iCloud copies recorded in SQLite.
-
-make backup-retention
-# Apply local + iCloud retention (keeps newest completed snapshot safe).
+make backup-once       # one full snapshot + iCloud copy, then exit
+make backup-retry      # retry failed iCloud copies recorded in SQLite
+make backup-retention  # apply local + iCloud retention policy
 ```
 
 ---
@@ -375,13 +381,13 @@ docker compose down -v   # ← THIS deletes all data (Chroma + Ollama volumes)
 **Never run `down -v` unless you want to start from scratch.**
 `make down` is safe — it does NOT pass `-v`.
 
-If you accidentally delete the index, run `make up` and then `make index` to rebuild it.
+If you accidentally delete the index: `make up` then `make index`.
 
 ---
 
-## Using in Claude Desktop
+## Using with Claude
 
-Once the MCP is registered, just talk to Claude naturally:
+Once the MCP is registered, talk to Claude naturally:
 
 ```
 You: "What do I know about Docker networking?"
@@ -404,15 +410,13 @@ Claude: [calls save_note] → saves directly to your vault
 
 ## MCP Tools Available
 
-
-| Tool           | What it does                     |
-| -------------- | -------------------------------- |
-| `search_vault` | Semantic search across all notes |
-| `get_note`     | Read a specific note by path     |
-| `list_notes`   | List notes in a folder           |
-| `list_tags`    | All tags in vault with counts    |
-| `save_note`    | Create a new note from Claude    |
-
+| Tool | What it does |
+|---|---|
+| `search_vault` | Semantic search across all notes (supports `top_k` param, default 3) |
+| `get_note` | Read a specific note by relative path |
+| `list_notes` | List notes in a folder |
+| `list_tags` | All tags in vault with counts |
+| `save_note` | Create a new note from Claude directly into the vault |
 
 ---
 
@@ -420,28 +424,36 @@ Claude: [calls save_note] → saves directly to your vault
 
 ```
 second-brain/
-├── Makefile / Makefile.windows
-├── win/brain.ps1 / win/brain.cmd   ← Windows helpers (no Make required)
+├── Makefile                    ← Mac / Linux / Git Bash on Windows
+├── Makefile.windows            ← includes Makefile (GNU Make on Windows)
 ├── docker-compose.yml
 ├── .env.example
-├── backup-service/         ← optional batch zip + SQLite journal
-├── indexer/
-├── watcher/
-└── mcp-server/
+├── win/
+│   ├── brain.ps1               ← PowerShell helper (no Make required)
+│   └── brain.cmd               ← CMD helper
+├── backup-service/             ← SQLite journal + zip snapshots + iCloud copy
+│   └── app/
+│       ├── config.py
+│       ├── db.py               ← SQLite schema (fs_events, snapshots)
+│       ├── fs_watcher.py       ← vault file watcher → SQLite
+│       ├── snapshot_job.py     ← staging copy → zip → iCloud
+│       ├── retention.py        ← local + iCloud retention policy
+│       └── __main__.py         ← CLI entry point
+├── indexer/                    ← one-shot vault indexer into Chroma
+├── watcher/                    ← continuous watcher → re-indexes on change
+└── mcp-server/                 ← MCP SSE server + OAuth 2.0
 ```
 
 ---
 
 ## Cost
 
-
-| Service           | Cost               |
-| ----------------- | ------------------ |
-| Docker containers | Free               |
-| Ollama embeddings | Free (local)       |
-| ChromaDB          | Free (local)       |
-| MCP server        | Free (local)       |
-| Claude Desktop    | Your existing plan |
-
+| Service | Cost |
+|---|---|
+| Docker containers | Free |
+| Ollama embeddings | Free (local) |
+| ChromaDB | Free (local) |
+| MCP server | Free (local) |
+| Claude Desktop / Claude Code | Your existing plan |
 
 **Total additional cost: $0**
