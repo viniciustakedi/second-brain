@@ -1,13 +1,27 @@
-# Second Brain — Docker helpers (macOS, Linux, or Git Bash on Windows).
-# Windows CMD without Make: use `win\brain.cmd` or `.\win\brain.ps1`.
+# Second Brain — Docker helpers (macOS, Linux, or native Make on Windows using cmd.exe).
+# Prefer PowerShell if Make annoys you: .\win\brain.ps1 up
 # Compose reads `.env` from this directory automatically.
 
 -include .env
 export
 
+# Windows (e.g. Chocolatey GnuWin32 make, or MSVC nmake users: use win\brain.cmd instead).
+# On Windows, GNU Make often runs recipes with cmd.exe — no `test` or `grep`.
+ifeq ($(OS),Windows_NT)
+SHELL := cmd.exe
+.SHELLFLAGS := /c
+
+guard-env:
+	@if not exist .env (echo ERROR: Copy .env.example to .env in the project root and set VAULT_PATH. & exit /b 1)
+	@findstr /R /C:"VAULT_PATH=" .env >nul 2>&1 || (echo ERROR: VAULT_PATH missing in .env & exit /b 1)
+
+else
+
 guard-env:
 	@test -f .env || (echo "ERROR: Copy .env.example to .env in the project root and set VAULT_PATH." && exit 1)
 	@grep -qE '^[[:space:]]*VAULT_PATH=' .env || (echo "ERROR: VAULT_PATH missing in .env" && exit 1)
+
+endif
 
 up: guard-env
 	docker compose up -d
@@ -71,6 +85,12 @@ Q ?=
 TOP ?= 5
 MCP_PORT ?= 3777
 
+ifeq ($(OS),Windows_NT)
+search:
+	@if "$(Q)"=="" (echo ERROR: Q is not set. Usage: make search Q=your-query & exit /b 1)
+	curl -s -G "http://localhost:$(MCP_PORT)/search" --data-urlencode "q=$(Q)" -d "top_k=$(TOP)" | python -m json.tool
+else
 search:
 	@test -n "$(Q)" || (echo "ERROR: Q is not set. Usage: make search Q=\"your query\"" && exit 1)
 	curl -s -G "http://localhost:$(MCP_PORT)/search" --data-urlencode "q=$(Q)" -d "top_k=$(TOP)" | python3 -m json.tool
+endif
