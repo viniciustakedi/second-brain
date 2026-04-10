@@ -340,11 +340,14 @@ make down-backup  # stop backup service only
 These do NOT touch Chroma or Ollama volumes.
 
 ```bash
-make build         # rebuild mcp-server + watcher
-make build-mcp     # rebuild mcp-server only
-make build-watcher # rebuild watcher only
-make build-backup  # rebuild backup service only
+make build          # rebuild mcp-server + watcher
+make build-mcp      # rebuild mcp-server only
+make build-watcher  # rebuild watcher only
+make build-backup   # rebuild backup service only
+make build-indexer  # rebuild indexer only — required after editing indexer/indexer.py
 ```
+
+> **Important:** `make index` runs the pre-built indexer image. If you edit `indexer/indexer.py`, run `make build-indexer` first — otherwise the old image is used and your changes have no effect.
 
 ### Vault & indexing
 

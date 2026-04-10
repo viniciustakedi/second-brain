@@ -54,6 +54,9 @@ build-backup: guard-env
 	docker compose build --no-cache backup
 	docker compose up -d --force-recreate backup
 
+build-indexer: guard-env
+	docker compose --profile index build --no-cache indexer
+
 logs:
 	docker compose logs -f
 
